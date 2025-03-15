@@ -1,0 +1,154 @@
+---
+- name: Make wwlog directory
+  ansible.builtin.file:
+    state: directory
+    path: /root/wwlog
+    owner: root
+    group: root
+    mode: 0755
+- name: Configure Warewulf
+  ansible.builtin.command:
+    cmd: wwctl configure --all
+  register: wwctl_configure_all_result
+- name: Save wwctl configure --all stdout
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all_result.stdout }}"
+    dest: /root/wwlog/wwctl_configure_all_stdout.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Save wwctl configure --all stderr
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all_result.stderr }}"
+    dest: /root/wwlog/wwctl_configure_all_stderr.txt
+    owner: root
+    group: root
+    mode: 0644
+# wwctl node commands need warewulfd running in 4.5.5
+- name: Enable warewulfd
+  ansible.builtin.service:
+    name: warewulfd
+    state: started
+    enabled: true
+- name: Add nodes
+  ansible.builtin.command:
+    cmd: "wwctl node add n00[0-4].ww1 --ipaddr 10.0.2.0 --discoverable=true"
+  register: wwctl_node_add_result
+  # Returns 255 when adding existing node
+  failed_when: wwctl_node_add_result.rc not in [0, 255]
+# Node mac address needs to match libvirt VMs
+- name: Configure nodes
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl node set n000.ww1 -y --hwaddr 52:54:00:50:27:e0
+    - wwctl node set n001.ww1 -y --hwaddr 52:54:00:50:27:e1
+    - wwctl node set n002.ww1 -y --hwaddr 52:54:00:50:27:e2
+    - wwctl node set n003.ww1 -y --hwaddr 52:54:00:50:27:e3
+    - wwctl node set n004.ww1 -y --hwaddr 52:54:00:50:27:e4
+- name: Configure default profile
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl profile set -y default --netmask=255.255.0.0 --gateway=10.0.0.1
+- name: Add boot image
+  ansible.builtin.command:
+    cmd: "wwctl container import docker://ghcr.io/warewulf/warewulf-rockylinux:9.5 rocky-95"
+  register: wwctl_container_import_result
+  # Returns 255 when adding existing container
+  failed_when: wwctl_container_import_result.rc not in [0, 255]
+- name: Configure boot image
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl container import --update docker://ghcr.io/warewulf/warewulf-rockylinux:9.5 rocky-95 --syncuser
+    - wwctl profile set --yes --container rocky-95 default
+- name: Edit the boot image
+  ansible.builtin.shell:
+    cmd: |
+      wwctl container exec rocky-95 /bin/bash <<- EOF
+      dnf install -y "{{ ohpc_release_url }}"
+      dnf install -y ohpc-base-compute ohpc-slurm-client lmod-ohpc
+      dnf install -y chrony
+
+      systemctl enable munge
+      systemctl enable slurmd
+
+      # Restrict node login to users with active slurm jobs.
+      #echo "account required pam_slurm.so" >> $CHROOT/etc/pam.d/sshd
+
+      chpasswd << EOF
+      root:{{ ohpc_password }}
+      EOF
+  register: wwctl_container_exec_result
+- name: Save wwctl configure --all stdout
+  ansible.builtin.copy:
+    content: "{{ wwctl_container_exec_result.stdout }}"
+    dest: /root/wwlog/wwctl_container_exec_stdout.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Save wwctl configure --all stderr
+  ansible.builtin.copy:
+    content: "{{ wwctl_container_exec_result.stderr }}"
+    dest: /root/wwlog/wwctl_container_exec_stderr.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Build boot image
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl container syncuser --write rocky-95
+    - wwctl container build rocky-95
+- name: Delete slurm overlay
+  ansible.builtin.shell:
+    cmd: wwctl overlay delete --force slurm
+  register: wwctl_overlay_delete_result
+  # Returns 1 when overlay does not exist
+  failed_when: wwctl_overlay_delete_result.rc not in [0,1]
+- name: Create slurm overlay
+  ansible.builtin.shell:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl overlay create slurm
+    - wwctl overlay mkdir slurm /etc/munge
+    - wwctl overlay import slurm /etc/munge/munge.key
+    - wwctl overlay mkdir slurm /etc/sysconfig
+    - wwctl overlay import slurm <(echo SLURMD_OPTIONS="--conf-server 10.0.0.1") /etc/sysconfig/slurmd
+    - wwctl overlay show slurm /etc/sysconfig/slurmd
+- name: Build overlays
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl profile set default -y --runtime generic,slurm
+    - wwctl overlay build
+- name: Configure Warewulf (update after changes)
+  ansible.builtin.command:
+    cmd: wwctl configure --all
+  register: wwctl_configure_all_result
+- name: Save wwctl configure --all stdout
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all_result.stdout }}"
+    dest: /root/wwlog/wwctl_configure_all_stdout2.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Save wwctl configure --all stderr
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all_result.stderr }}"
+    dest: /root/wwlog/wwctl_configure_all_stderr2.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Start munge
+  ansible.builtin.service:
+    name: munge
+    state: restarted
+    enabled: true
+- name: Start slurmctld
+  ansible.builtin.service:
+    name: slurmctld
+    state: restarted
+    enabled: true
+

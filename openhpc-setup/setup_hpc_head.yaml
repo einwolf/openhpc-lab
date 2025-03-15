@@ -7,6 +7,7 @@
   vars_files:
     - vars/vars_vault.yaml
     - vars/package_urls.yaml
+    - vars/node_config.yaml
   tasks:
   # - name: Debug print variables
   #   ansible.builtin.include_role:
@@ -16,7 +17,7 @@
     ansible.builtin.include_role:
       name: setup-hpc
       tasks_from: install_hpc_head
-  # - name: Setup HPC head node
-  #   ansible.builtin.include_role:
-  #     name: setup-hpc
-  #     tasks_from: configure_hpc_head
+  - name: Setup Warewulf on HPC head node
+    ansible.builtin.include_role:
+      name: setup-hpc
+      tasks_from: configure_ww_head

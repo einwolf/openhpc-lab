@@ -23,26 +23,17 @@
   with_items:
     - "{{ ohpc_release_url }}"
     - ohpc-base
-    - ohpc-warewulf
+    - docs-ohpc
+    - warewulf-ohpc
     - hwloc-ohpc
     - ohpc-slurm-server
-- name: Configure enp2s0
-  ansible.builtin.command:
-    cmd: "{{ item }}"
-  with_items:
-    - nmcli con down enp2s0
-    - nmcli con modify enp2s0 ipv4.addresses "10.0.0.1/16"
-    - nmcli con modify enp2s0 ipv4.method manual
-    - nmcli con modify enp2s0 ipv6.method link-local
-    - nmcli con modify enp2s0 connection.autoconnect yes
-    - nmcli con up enp2s0
-# - name: Copy warewulf.conf
-#   ansible.builtin.copy:
-#     src: etc/warewulf/warewulf.conf
-#     dest: /etc/warewulf/warewulf.conf
-#     owner: root
-#     group: root
-#     mode: 0644
+# ohpc-warewulf is warewulf 3.10
+# warewulf-ohpc is warewulf 4.5.5
+- name: Disable firewalld
+  ansible.builtin.service:
+    name: firewalld
+    state: stopped
+    enabled: false
 - name: Configure chrony
   ansible.builtin.copy:
     src: etc/chrony.conf
@@ -55,11 +46,39 @@
     name: chronyd
     state: restarted
     enabled: true
+- name: Down enp2s0
+  ansible.builtin.command:
+    cmd: nmcli con down enp2s0
+  register: nmcli_result
+  # Returns 10 when trying to down a downed interface
+  failed_when: nmcli_result.rc not in [0, 10]
+- name: Configure enp2s0
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - nmcli con modify enp2s0 ipv4.addresses "10.0.0.1/16"
+    - nmcli con modify enp2s0 ipv4.method manual
+    - nmcli con modify enp2s0 ipv6.method link-local
+    - nmcli con modify enp2s0 connection.autoconnect yes
+- name: Up enp2s0
+  ansible.builtin.command:
+    cmd: nmcli con up enp2s0
+  register: nmcli_result
+  failed_when: nmcli_result.rc not in [0]
+- name: Copy warewulf.conf
+  ansible.builtin.copy:
+    src: etc/warewulf/warewulf.conf
+    dest: /etc/warewulf/warewulf.conf
+    owner: root
+    group: root
+    mode: 0644
+# /etc/slurm/slurm.conf.ohpc with
+# SlurmctldHost=ww1-head1
+#the node configuration at the bottom changed
 - name: Configure slurm
   ansible.builtin.copy:
-    src: /etc/slurm/slurm.conf.ohpc
+    src: etc/slurm/slurm.conf
     dest: /etc/slurm/slurm.conf
-    remote_src: true
     owner: root
     group: root
     mode: 0644
@@ -71,7 +90,7 @@
     owner: root
     group: root
     mode: 0644
-- name: Change slurm resource manager hostname
-  ansible.builtin.command:
-    cmd: 'perl -pi -e "s/SlurmctldHost=\S+/SlurmctldHost=ww1-head1/" /etc/slurm/slurm.conf'
+# - name: Change slurm resource manager hostname
+#   ansible.builtin.command:
+#     cmd: 'perl -pi -e "s/SlurmctldHost=\S+/SlurmctldHost=ww1-head1/" /etc/slurm/slurm.conf'
 
