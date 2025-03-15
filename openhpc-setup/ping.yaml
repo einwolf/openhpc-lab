@@ -1,0 +1,16 @@
+# Used to test ssh login and refresh ssh host keys
+---
+- name: ping hosts
+  hosts: all
+  gather_facts: false
+  become: false
+  vars_files:
+    - vars/vars_vault.yaml
+  tasks:
+  - name: Remove ssh known_hosts key
+    delegate_to: localhost
+    command:
+      cmd: ssh-keygen -R "{{ inventory_hostname_short }}"
+  - name: Ping host
+    ansible.builtin.ping:
+    timeout: 10

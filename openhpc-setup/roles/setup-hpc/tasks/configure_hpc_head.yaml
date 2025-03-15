@@ -1,0 +1,59 @@
+---
+- name: Make wwlog directory
+  ansible.builtin.file:
+    state: directory
+    path: /root/wwlog
+    owner: root
+    group: root
+    mode: 0755
+- name: Configure Warewulf
+  ansible.builtin.command:
+    cmd: wwctl configure --all
+  register: wwctl_configure_all
+- name: Save wwctl configure --all stdout
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all.stdout }}"
+    dest: /root/wwlog/wwctl_configure_all_stdout.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Save wwctl configure --all stderr
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all.stderr }}"
+    dest: /root/wwlog/wwctl_configure_all_stderr.txt
+    owner: root
+    group: root
+    mode: 0644
+# Node mac address needs to match libvirt VMs
+- name: Add and configure nodes
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl node add n00[0-4].ww1 --ipaddr 10.0.2.0 --discoverable=true
+    - wwctl node set n000.ww1 -y --hwaddr 52:54:00:50:27:e0
+    - wwctl node set n001.ww1 -y --hwaddr 52:54:00:50:27:e1
+    - wwctl node set n002.ww1 -y --hwaddr 52:54:00:50:27:e2
+    - wwctl node set n003.ww1 -y --hwaddr 52:54:00:50:27:e3
+    - wwctl node set n004.ww1 -y --hwaddr 52:54:00:50:27:e4
+- name: Configure default profile
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl profile set -y default --netmask=255.255.0.0 --gateway=10.0.0.1
+- name: Configure boot image
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl image import docker://ghcr.io/warewulf/warewulf-rockylinux:9.5 rocky-95
+    - wwctl profile set --yes --image rocky-95 default
+    - wwctl image build rocky-95
+- name: Build overlay
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl overlay
+- name: Enable warewulfd
+  ansible.builtin.service:
+    name: warewulfd
+    state: started
+    enabled: true

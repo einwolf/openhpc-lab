@@ -1,0 +1,5 @@
+{
+  ansible_user_vault: x,
+  ansible_ssh_pass_vault: x,
+  ansible_become_pass_vault: x
+}

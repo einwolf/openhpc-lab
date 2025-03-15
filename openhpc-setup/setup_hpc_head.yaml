@@ -1,0 +1,22 @@
+# Setup warewulf head VM
+---
+- name: Setup HPC head node
+  hosts: all
+  gather_facts: true
+  become: true
+  vars_files:
+    - vars/vars_vault.yaml
+    - vars/package_urls.yaml
+  tasks:
+  # - name: Debug print variables
+  #   ansible.builtin.include_role:
+  #     name: setup-ww
+  #     tasks_from: debug_var
+  - name: Install HPC head node
+    ansible.builtin.include_role:
+      name: setup-hpc
+      tasks_from: install_hpc_head
+  # - name: Setup HPC head node
+  #   ansible.builtin.include_role:
+  #     name: setup-hpc
+  #     tasks_from: configure_hpc_head
