@@ -106,6 +106,7 @@
 
       # Node boot fails because selinux policy is missing
       dnf install -y selinux-policy-targeted
+      sed -i 's/^SELINUX=.*$/SELINUX=permissive/' /etc/selinux/config
 
       # Install other software
       dnf install -y chrony
