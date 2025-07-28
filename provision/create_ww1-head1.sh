@@ -21,7 +21,7 @@ virt-install --osinfo almalinux9 --name ww1-head1 \
 --disk pool=d1disks,size=200 \
 --network=bridge:br0 \
 --network=network=ww1-nodes \
---location "/data1/libvirt/d1isos/AlmaLinux-9.5-x86_64-dvd.iso" \
+--location "/data1/libvirt/d1isos/AlmaLinux-9.6-x86_64-dvd.iso" \
 --initrd-inject "/data1/provision/kickstarts/ww1-head1-ks.cfg" \
 --extra-args="inst.ks=file:/ww1-head1-ks.cfg" \
 --noautoconsole

@@ -1,5 +1,4 @@
-{
-ww_rpm_url: https://github.com/warewulf/warewulf/releases/download/v4.6.0/warewulf-4.6.0-1.el9.x86_64.rpm,
-ww_dracut_rpm_url: https://github.com/warewulf/warewulf/releases/download/v4.6.0/warewulf-dracut-4.6.0-1.el9.noarch.rpm,
+ww_rpm_url: https://github.com/warewulf/warewulf/releases/download/v4.6.0/warewulf-4.6.0-1.el9.x86_64.rpm
+ww_dracut_rpm_url: https://github.com/warewulf/warewulf/releases/download/v4.6.0/warewulf-dracut-4.6.0-1.el9.noarch.rpm
 ohpc_release_url: http://repos.openhpc.community/OpenHPC/3/EL_9/x86_64/ohpc-release-3-1.el9.x86_64.rpm
-}
+

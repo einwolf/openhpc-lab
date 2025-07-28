@@ -15,6 +15,10 @@
     - gnome-extensions-app
     - gnome-shell-extension-caffeine
     - dnf-plugins-core
+# ohpc 3.3.1
+# ohpc-warewulf is warewulf 3.10
+# warewulf-ohpc is warewulf 4.6.1
+# slurm is 24.11.5
 - name: Install OpenHPC rpms
   ansible.builtin.dnf:
     name: "{{ item }}"
@@ -22,13 +26,11 @@
     disable_gpg_check: true
   with_items:
     - "{{ ohpc_release_url }}"
-    - ohpc-base
+    - ohpc-base-3.3
     - docs-ohpc
-    - warewulf-ohpc
+    - warewulf-ohpc-4.6.1
     - hwloc-ohpc
     - ohpc-slurm-server
-# ohpc-warewulf is warewulf 3.10
-# warewulf-ohpc is warewulf 4.5.5
 - name: Disable firewalld
   ansible.builtin.service:
     name: firewalld
@@ -72,9 +74,9 @@
     owner: root
     group: root
     mode: 0644
-# /etc/slurm/slurm.conf.ohpc with
+# This is /etc/slurm/slurm.conf.ohpc with
 # SlurmctldHost=ww1-head1
-#the node configuration at the bottom changed
+# the node configuration at the bottom changed
 - name: Configure slurm
   ansible.builtin.copy:
     src: etc/slurm/slurm.conf

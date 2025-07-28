@@ -1,4 +1,5 @@
 ---
+# Configure head node
 - name: Make wwlog directory
   ansible.builtin.file:
     state: directory
@@ -6,25 +7,7 @@
     owner: root
     group: root
     mode: 0755
-- name: Configure Warewulf
-  ansible.builtin.command:
-    cmd: wwctl configure --all
-  register: wwctl_configure_all_result
-- name: Save wwctl configure --all stdout
-  ansible.builtin.copy:
-    content: "{{ wwctl_configure_all_result.stdout }}"
-    dest: /root/wwlog/wwctl_configure_all_stdout.txt
-    owner: root
-    group: root
-    mode: 0644
-- name: Save wwctl configure --all stderr
-  ansible.builtin.copy:
-    content: "{{ wwctl_configure_all_result.stderr }}"
-    dest: /root/wwlog/wwctl_configure_all_stderr.txt
-    owner: root
-    group: root
-    mode: 0644
-# wwctl node commands need warewulfd running in 4.5.5
+# wwctl node commands need warewulfd running in 4.5.5 and 4.6.1
 - name: Enable warewulfd
   ansible.builtin.service:
     name: warewulfd
@@ -46,49 +29,108 @@
     - wwctl node set n002.ww1 -y --hwaddr 52:54:00:50:27:e2
     - wwctl node set n003.ww1 -y --hwaddr 52:54:00:50:27:e3
     - wwctl node set n004.ww1 -y --hwaddr 52:54:00:50:27:e4
-- name: Configure default profile
+- name: Delete ww1-nodes profile
+  ansible.builtin.command:
+    cmd: wwctl profile delete -y ww1-nodes
+  register: wwctl_profile_delete_result
+  # Returns 255 when profile does not exist
+  failed_when: wwctl_profile_delete_result.rc not in [0, 255]
+- name: Configure profile for compute nodes inheriting from default
   ansible.builtin.command:
     cmd: "{{ item }}"
   with_items:
-    - wwctl profile set -y default --netmask=255.255.0.0 --gateway=10.0.0.1
-- name: Add boot image
+    - wwctl profile add ww1-nodes --profile default --comment "WW1 nodes profile"
+- name: Delete nodeconfig overlay
   ansible.builtin.command:
-    cmd: "wwctl container import docker://ghcr.io/warewulf/warewulf-rockylinux:9.5 rocky-95"
-  register: wwctl_container_import_result
+    cmd: wwctl overlay delete --force nodeconfig
+  register: wwctl_overlay_delete_result
+  # Returns 255 when overlay does not exist
+  failed_when: wwctl_overlay_delete_result.rc not in [0, 255]
+- name: Create nodeconfig overlay
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  with_items:
+    - wwctl overlay create nodeconfig
+    - wwctl profile set ww1-nodes --yes --system-overlays nodeconfig --runtime-overlays syncuser
+    - wwctl profile set ww1-nodes -y --netname=default --netdev=enp2s0
+    - wwctl profile set ww1-nodes -y --netname=default --netmask=255.255.0.0
+    - wwctl profile set ww1-nodes -y --netname=default --gateway=10.0.0.1
+    - wwctl profile set ww1-nodes -y --netname=default --nettagadd=DNS=10.0.0.1
+    # selinux doesn't work with default root=initramfs
+    # Boot says it doesn't support file contexts
+    # default root: initramfs
+    # default kernelargs: not set
+    - wwctl profile set default -y --root tmpfs
+    - wwctl profile set default -y --kernelargs wwinit.tmpfs.size=1G
+# - name: Edit hosts.ww to have node name first
+#   ansible.builtin.command: |
+#     wwctl overlay cat host /etc/hosts.ww | \
+#     sed -e 's_\({{$node.Id}}{{end}}\)_{{$node.Id}}.localdomain \1_g' | \
+#     EDITOR=tee wwctl overlay edit host /etc/hosts.ww
+- name: Configure Warewulf
+  ansible.builtin.command:
+    cmd: wwctl configure --all
+  register: wwctl_configure_all_result
+- name: Save wwctl configure --all stdout
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all_result.stdout }}"
+    dest: /root/wwlog/wwctl_configure_all_stdout.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Save wwctl configure --all stderr
+  ansible.builtin.copy:
+    content: "{{ wwctl_configure_all_result.stderr }}"
+    dest: /root/wwlog/wwctl_configure_all_stderr.txt
+    owner: root
+    group: root
+    mode: 0644
+# Configure compute nodes
+- name: Add compute node boot image
+  ansible.builtin.command:
+    cmd: "wwctl image import docker://ghcr.io/warewulf/warewulf-almalinux:9.6 alma-96 --syncuser"
+  register: wwctl_image_import_result
   # Returns 255 when adding existing container
-  failed_when: wwctl_container_import_result.rc not in [0, 255]
-- name: Configure boot image
+  failed_when: wwctl_image_import_result.rc not in [0, 255]
+- name: Set default boot image
   ansible.builtin.command:
-    cmd: "{{ item }}"
-  with_items:
-    - wwctl container import --update docker://ghcr.io/warewulf/warewulf-rockylinux:9.5 rocky-95 --syncuser
-    - wwctl profile set --yes --container rocky-95 default
+    cmd: "wwctl profile set --yes --container alma-96 default"
 - name: Edit the boot image
   ansible.builtin.shell:
     cmd: |
-      wwctl container exec rocky-95 /bin/bash <<- EOF
+      set +x
+      wwctl container exec --build=false alma-96 /bin/bash <<- EOF
+      # Install ohpc slurm
       dnf install -y "{{ ohpc_release_url }}"
       dnf install -y ohpc-base-compute ohpc-slurm-client lmod-ohpc
+
+      # Node boot fails because selinux policy is missing
+      dnf install -y selinux-policy-targeted
+
+      # Install other software
       dnf install -y chrony
 
+      # Enable slurm
       systemctl enable munge
       systemctl enable slurmd
 
       # Restrict node login to users with active slurm jobs.
       #echo "account required pam_slurm.so" >> $CHROOT/etc/pam.d/sshd
 
-      chpasswd << EOF
+      # Set root password
+      chpasswd <<- EOF2
       root:{{ ohpc_password }}
+      EOF2
       EOF
   register: wwctl_container_exec_result
-- name: Save wwctl configure --all stdout
+- name: Save wwctl container exec stdout
   ansible.builtin.copy:
     content: "{{ wwctl_container_exec_result.stdout }}"
     dest: /root/wwlog/wwctl_container_exec_stdout.txt
     owner: root
     group: root
     mode: 0644
-- name: Save wwctl configure --all stderr
+- name: Save wwctl container exec stderr
   ansible.builtin.copy:
     content: "{{ wwctl_container_exec_result.stderr }}"
     dest: /root/wwlog/wwctl_container_exec_stderr.txt
@@ -99,14 +141,14 @@
   ansible.builtin.command:
     cmd: "{{ item }}"
   with_items:
-    - wwctl container syncuser --write rocky-95
-    - wwctl container build rocky-95
+    - wwctl container syncuser --write alma-96
+    - wwctl container build alma-96
 - name: Delete slurm overlay
   ansible.builtin.shell:
     cmd: wwctl overlay delete --force slurm
   register: wwctl_overlay_delete_result
-  # Returns 1 when overlay does not exist
-  failed_when: wwctl_overlay_delete_result.rc not in [0,1]
+  # Returns 1 (4.5) or 255 (4.5) when overlay does not exist
+  failed_when: wwctl_overlay_delete_result.rc not in [0,1,255]
 - name: Create slurm overlay
   ansible.builtin.shell:
     cmd: "{{ item }}"
@@ -119,10 +161,22 @@
     - wwctl overlay show slurm /etc/sysconfig/slurmd
 - name: Build overlays
   ansible.builtin.command:
-    cmd: "{{ item }}"
-  with_items:
-    - wwctl profile set default -y --runtime generic,slurm
-    - wwctl overlay build
+    cmd: wwctl overlay build
+  register: wwctl_overlay_build_result
+- name: Save wwctl overlay build stdout
+  ansible.builtin.copy:
+    content: "{{ wwctl_overlay_build_result.stdout }}"
+    dest: /root/wwlog/wwctl_overlay_build_stdout.txt
+    owner: root
+    group: root
+    mode: 0644
+- name: Save wwctl overlay build stderr
+  ansible.builtin.copy:
+    content: "{{ wwctl_overlay_build_result.stderr }}"
+    dest: /root/wwlog/wwctl_overlay_build_stderr.txt
+    owner: root
+    group: root
+    mode: 0644
 - name: Configure Warewulf (update after changes)
   ansible.builtin.command:
     cmd: wwctl configure --all
